@@ -1,0 +1,105 @@
+---
+title: "Practical Machine Learning - Project"
+author: "Gabriele Falco"
+date: "20 november 2015"
+output: html_document
+---
+## Introduction
+
+The project uses data from the Weight Lifting Exercises (WLE) Dataset (see http://groupware.les.inf.puc-rio.br/har) According to the WLE website, six participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions, identified as classes A, B, C, D and E. Class A corresponds to a correct execution of the exercise, and the remaining five classes identify common mistakes in this weight lifting exercise. Several sensors were used to collect data about the quality of the exercise execution. The goal of this project is to obtain a prediction algorithm that takes such a set of sensor readings and correctly predicts the corresponding class (A to E).
+
+In the following analysis, a random forest algorithm is used to make such predictions, after some data cleaning. The results of the analysis confirm that the model provided by this algorithm achieves a high prediction accuracy (as indicated by several prediction quality indicators).
+
+##Starting up with the data
+
+First step is loading libraries and data, and initialize a random number generator:
+
+```{r,echo=FALSE}
+training <- read.csv("~/pml-training.csv", na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv("~/pml-testing.csv", na.strings=c("NA","#DIV/0!",""))
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+set.seed(241175)
+```
+
+Next, partitions for training (myTraining) as well as for cross-validation (myTesting) are created:
+
+```{r}
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+myTraining <- training[inTrain, ]; myTesting <- training[-inTrain, ]
+dim(myTraining); dim(myTesting)
+```
+
+##Data cleaning
+
+Some data cleaning is performed:
+1. near-zero-variance parameters are discarded as well as first column that is not relevant, since it is just a progressive number:
+```{r}
+myDataNZV <- nearZeroVar(myTraining, saveMetrics=TRUE)
+nzvs <- which(myDataNZV$nzv)
+nnzvs <- row.names(myDataNZV[nzvs,])
+
+myTraining2 <- myTraining[,-nzvs]
+myTraining2 <- myTraining2[c(-1)]
+```
+
+2. Columns with more than 60% of NA's are discarded since they are not adequate for random forest algorithm.
+
+```{r}
+training3 <- myTraining2 #create another subset to iterate in loop
+for(i in 1:length(myTraining2)) { #for each column in the training dataset...
+        if( sum( is.na( myTraining2[, i] ) ) /nrow(myTraining2) >= .6 ) { #if num.of NAs > 60% of total observations
+        for(j in 1:length(training3)) {
+            if( length( grep(names(myTraining2[i]), names(training3)[j]) ) ==1)  { #if the columns are the same:
+                training3 <- training3[ , -j] #Remove that column
+            }   
+        } 
+    }
+}
+dim(training3)
+```
+
+3. also the cross-validation set is cleaned to match the training set also as data types:
+
+```{r}
+clean1 <- colnames(training3)
+clean2 <- colnames(training3[, -58]) #for the testing set : classe column removed
+myTesting <- myTesting[clean1]
+testing <- testing[clean2]
+
+#matching data types:
+
+for (i in 1:length(testing) ) {
+        for(j in 1:length(training3)) {
+        if( length( grep(names(training3[i]), names(testing)[j]) ) ==1)  {
+            class(testing[j]) <- class(training3[i])
+        }      
+    }      
+}
+testing <- rbind(training3[2, -58] , testing) 
+testing <- testing[-1,]
+
+```
+
+## Training and cross-validation
+
+The model is fitted, predictions made and a confusion matrix is generated:
+```{r}
+modFitRF <- randomForest(classe ~. , data=training3)
+predictionsRF <- predict(modFitRF, myTesting, type = "class")
+confusionMatrix(predictionsRF, myTesting$classe)
+
+```
+
+
+##Predictions on testing data
+The required predictions are as follows:
+```{r}
+predictions <- predict(modFitRF, testing, type = "class")
+predictions
+
+```
